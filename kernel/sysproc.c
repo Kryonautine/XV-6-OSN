@@ -132,3 +132,9 @@ uint64 sys_sigreturn(void) {
 	return sigreturn();
 }
 
+uint64 sys_settickets(void) {
+  int n;
+  argint(0, &n);
+  int number = settickets(n);
+  return number; // Success
+}

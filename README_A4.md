@@ -27,8 +27,5 @@ To run: make qemu
 
 * Changed yield() in usertrap, kerneltrap in trap.c to disable pre-emption for FCFS
 * Added copying parent's tickets in fork() in proc.c
-* Added random_proc and do_random_proc to defs.h
 
-* Do i need to change SCHEDULER from number to macro #ifdef statements?
-* Need to do settickets
 * Changed procdump for debugging: Added ctime to printf. (Need to remove)

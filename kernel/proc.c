@@ -29,6 +29,43 @@ struct spinlock wait_lock;
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
+
+// Copied random num generator from grind.c
+// from FreeBSD.
+int
+do_rand_proc(unsigned long *ctx)
+{
+/*
+ * Compute x = (7^5 * x) mod (2^31 - 1)
+ * without overflowing 31 bits:
+ *      (2^31 - 1) = 127773 * (7^5) + 2836
+ * From "Random number generators: good ones are hard to find",
+ * Park and Miller, Communications of the ACM, vol. 31, no. 10,
+ * October 1988, p. 1195.
+ */
+    long hi, lo, x;
+
+    /* Transform to [1, 0x7ffffffe] range. */
+    x = (*ctx % 0x7ffffffe) + 1;
+    hi = x / 127773;
+    lo = x % 127773;
+    x = 16807 * lo - 2836 * hi;
+    if (x < 0)
+        x += 0x7fffffff;
+    /* Transform to [0, 0x7ffffffd] range. */
+    x--;
+    *ctx = x;
+    return (x);
+}
+
+unsigned long rand_next = 1;
+
+int
+rand_proc(void)
+{
+    return (do_rand_proc(&rand_next));
+}
+
 void
 proc_mapstacks(pagetable_t kpgtbl)
 {
@@ -125,6 +162,7 @@ found:
   p->pid = allocpid();
   p->state = USED;
   p->intime = ticks;
+  p->tickets = 1;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -321,6 +359,9 @@ fork(void)
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
+
+  // Copy saved Tickets
+  np->tickets = p->tickets;
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -545,7 +586,7 @@ scheduler(void)
     }
 #endif
 
-#ifdef FCFS
+#ifdef FCFS // Why does this not work?
     struct proc *early=0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
@@ -570,9 +611,52 @@ scheduler(void)
     if (early!=0) {
       early->state=RUNNING;
       c->proc = early;
-      swtch(&c->context, &p->context);
+      swtch(&c->context, &early->context);
       c->proc=0;
+      release(&early->lock);
+    }
+#endif
+
+#ifdef LBS
+    struct proc * mostprob=0;
+    int maxprob=0;
+    for (p=proc;p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      int num = rand_proc()/1000;
+
+      if (p->tickets<0) {
+        p->tickets = 0;
+      }
+
+      int prob = -1;
+      while (prob<0) {
+        prob = p->tickets * num;
+      }
+
+      if (mostprob!=0) {
+        if (prob>maxprob) {
+          release(&mostprob->lock);
+          mostprob=p;
+          maxprob = prob;
+          continue;
+        }
+      }
+      else {
+        release(&mostprob->lock);
+        mostprob = p;
+        maxprob = prob;
+        continue;
+      }
       release(&p->lock);
+    }
+
+    if (mostprob!=0) {
+      mostprob->state=RUNNING;
+      c->proc = mostprob;
+      swtch(&c->context, &mostprob->context);
+      c->proc=0;
+      release(&mostprob->lock);
     }
 #endif
 
@@ -794,4 +878,11 @@ void trace(int trace_mask)
 {
   struct proc *p = myproc();
   p->trace_mask = trace_mask;
+}
+
+
+int settickets(int number) {
+  struct proc *caller = myproc();
+  caller->tickets = number;
+  return 0; // 0 if success
 }
