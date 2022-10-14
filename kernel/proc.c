@@ -163,6 +163,14 @@ found:
   p->state = USED;
   p->intime = ticks;
   p->tickets = 1;
+  /*
+  p->sp = 60;
+  p->dp = 0;
+  p->stop_run = 0;
+  p->niceness = 5;
+  p->num_scheduled = 0;
+  p->last_scheduled = 0;
+  */
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -618,45 +626,46 @@ scheduler(void)
 #endif
 
 #ifdef LBS
-    struct proc * mostprob=0;
+    struct proc * winner=0;
     int maxprob=0;
     for (p=proc;p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+      if (p->state == RUNNABLE) {
 
-      int num = rand_proc()/1000;
+        int num = rand_proc()/1000;
 
-      if (p->tickets<0) {
-        p->tickets = 0;
-      }
+        if (p->tickets<0) {
+          p->tickets = 0;
+        }
 
-      int prob = -1;
-      while (prob<0) {
-        prob = p->tickets * num;
-      }
+        int prob = -1;
+        while (prob<0) {
+          prob = p->tickets * num;
+        }
 
-      if (mostprob!=0) {
-        if (prob>maxprob) {
-          release(&mostprob->lock);
-          mostprob=p;
+        if (winner!=0) {
+          if (prob>maxprob) {
+            release(&winner->lock);
+            winner=p;
+            maxprob = prob;
+            continue;
+          }
+        }
+        else {
+          winner = p;
           maxprob = prob;
           continue;
         }
       }
-      else {
-        release(&mostprob->lock);
-        mostprob = p;
-        maxprob = prob;
-        continue;
-      }
       release(&p->lock);
     }
 
-    if (mostprob!=0) {
-      mostprob->state=RUNNING;
-      c->proc = mostprob;
-      swtch(&c->context, &mostprob->context);
+    if (winner!=0) {
+      winner->state=RUNNING;
+      c->proc = winner;
+      swtch(&c->context, &winner->context);
       c->proc=0;
-      release(&mostprob->lock);
+      release(&winner->lock);
     }
 #endif
 

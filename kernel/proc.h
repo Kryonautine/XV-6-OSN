@@ -110,9 +110,17 @@ struct proc {
   struct trapframe *alarm_trapframe;  // A copy of trapframe right before running alarm_handler
   int alarm_goingoff;
   int trace_mask;
-  int intime; 
+  int intime;                   // Start time
   int trtime;  
   int endtime;   
   int tickets;
+  /*
+  int num_scheduled;            // Number of times it has been scheduled
+  int last_scheduled;           // Time since last scheduling
+  int stop_run;                 // Time since it started sleeping
+  int sp;                       // Static priority
+  int dp;                       // Dynamic priority
+  int niceness;                 // Niceness
+  */
 
 };
