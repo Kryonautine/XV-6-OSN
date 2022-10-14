@@ -113,5 +113,6 @@ struct proc {
   int intime; 
   int trtime;  
   int endtime;   
+  int tickets;
 
 };
