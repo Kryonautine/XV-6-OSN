@@ -124,6 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->intime = ticks;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -525,6 +526,7 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+#ifdef RR
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
@@ -541,6 +543,39 @@ scheduler(void)
       }
       release(&p->lock);
     }
+#endif
+
+#ifdef FCFS
+    struct proc *early=0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE) {
+        if (p->pid > 1) {
+          if (early==0) {
+            early=p;
+            continue;
+          }
+          else {
+            if (p->intime < early->intime) { // Finding process with minimum creation time
+              release(&early->lock);
+              early = p;
+              continue;
+            }
+          }
+        }
+      }
+      release(&p->lock);
+    }
+
+    if (early!=0) {
+      early->state=RUNNING;
+      c->proc = early;
+      swtch(&c->context, &p->context);
+      c->proc=0;
+      release(&p->lock);
+    }
+#endif
+
   }
 }
 
