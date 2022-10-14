@@ -109,4 +109,9 @@ struct proc {
   int alarm_ticks;             // How many ticks left before next alarm goes off
   struct trapframe *alarm_trapframe;  // A copy of trapframe right before running alarm_handler
   int alarm_goingoff;
+  int trace_mask;
+  int intime; 
+   int trtime;  
+   int endtime;   
+
 };

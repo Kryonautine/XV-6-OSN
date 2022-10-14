@@ -17,6 +17,32 @@ sys_exit(void)
 }
 
 uint64
+sys_waitx(void)
+{
+  uint64 addr, addr1, addr2;
+  uint wtime, rtime;
+  argaddr(0, &addr);
+  argaddr(1, &addr1); // user virtual memory
+  argaddr(2, &addr2);
+  int ret = waitx(addr, &wtime, &rtime);
+  struct proc* p = myproc();
+  if (copyout(p->pagetable, addr1,(char*)&wtime, sizeof(int)) < 0)
+    return -1;
+  if (copyout(p->pagetable, addr2,(char*)&rtime, sizeof(int)) < 0)
+    return -1;
+  return ret;
+}
+
+uint64
+sys_trace(void)
+{
+  int n;
+  argint(0, &n);
+  trace(n);
+  return 0;
+}
+
+uint64
 sys_getpid(void)
 {
   return myproc()->pid;
