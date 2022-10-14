@@ -111,7 +111,7 @@ struct proc {
   int alarm_goingoff;
   int trace_mask;
   int intime; 
-   int trtime;  
-   int endtime;   
+  int trtime;  
+  int endtime;   
 
 };
