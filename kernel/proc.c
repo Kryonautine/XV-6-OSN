@@ -145,6 +145,10 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  
+  // OSN scheduling changes.
+  p->ctime = ticks;
+  p->tickets = 1;
 
   return p;
 }
@@ -299,6 +303,9 @@ fork(void)
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // OSN LBS Addition
+  np->tickets = p->tickets;
+
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -452,7 +459,10 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+#ifdef RR // Aka Round Robin, change nothing
+
     for(p = proc; p < &proc[NPROC]; p++) {
+
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
@@ -467,7 +477,120 @@ scheduler(void)
         c->proc = 0;
       }
       release(&p->lock);
+
     }
+
+#endif
+
+#ifdef FCFS // Aka FCFS
+
+    struct proc *min = 0; // Min ctime proc
+
+    acquire(&p->lock);
+    for(p = proc; p < &proc[NPROC]; p++) {
+      // func to find process with minimum ctime
+
+      if (p->state != RUNNABLE) {
+        continue;
+      }
+
+      if (p->pid > 1) { // Does not do it for sh and init processes.
+
+        if (min != 0) {
+
+          if (p->ctime < min->ctime) {
+            min = p;
+          }
+
+        }
+
+        else {
+          min = p;
+        }
+      }
+    }
+
+    p = min;
+
+    // if-else statement seems redundant
+    if(p->state == RUNNABLE) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+    }
+    release(&p->lock);
+
+#endif
+
+#ifdef LBS // Lottery
+
+    int prob_proc[NPROC];
+
+    int i=0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+
+      prob_proc[i] = -1;
+
+      while (prob_proc[i]<0) {
+        // Generates a random num, and multiplies with number of tickets of process.
+        // Repeats if this number overflows
+        int num = random_proc()/1000;
+        prob_proc[i] = p->tickets * num;
+      }
+
+      i++;
+    }
+
+    i=0;
+    struct proc *max = 0; // max tickets proc
+    int max_prob;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      // Finds process with maximum probability and runs it.
+
+      acquire(&p->lock);
+      if (max != 0) {
+        if (prob_proc[i] > max_prob) {
+          max_prob = prob_proc[i];
+          max = p;
+        }
+      }
+      else {
+        max = p;
+        max_prob = prob_proc[i];
+      }
+      release(&p->lock);
+
+      i++;
+    }
+
+    p = max;
+
+    // Need to assign timeslices and increased probability
+
+    acquire(&p->lock);
+    if(p->state == RUNNABLE) {
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+    }
+    release(&p->lock);
+
+#endif
   }
 }
 
@@ -677,7 +800,44 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    //printf("%d %s %s", p->pid, state, p->name);
+    printf("%d %s %s %d", p->pid, state, p->name, p->ctime);
     printf("\n");
   }
+}
+
+// From user/grind.c
+// from FreeBSD.
+int
+do_random_proc(unsigned long *ctx)
+{
+/*
+ * Compute x = (7^5 * x) mod (2^31 - 1)
+ * without overflowing 31 bits:
+ *      (2^31 - 1) = 127773 * (7^5) + 2836
+ * From "Random number generators: good ones are hard to find",
+ * Park and Miller, Communications of the ACM, vol. 31, no. 10,
+ * October 1988, p. 1195.
+ */
+    long hi, lo, x;
+
+    /* Transform to [1, 0x7ffffffe] range. */
+    x = (*ctx % 0x7ffffffe) + 1;
+    hi = x / 127773;
+    lo = x % 127773;
+    x = 16807 * lo - 2836 * hi;
+    if (x < 0)
+        x += 0x7fffffff;
+    /* Transform to [0, 0x7ffffffd] range. */
+    x--;
+    *ctx = x;
+    return (x);
+}
+
+unsigned long rand_next = 1;
+
+int
+random_proc(void)
+{
+    return (do_random_proc(&rand_next));
 }
